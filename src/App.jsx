@@ -287,7 +287,7 @@ export default function App() {
 
 function AppInner() {
   const auth = useAuth();
-  const [page, setPage] = useState("home");
+  const [page, setPage] = useState("landing");
   const [pageArg, setPageArg] = useState(null);
   const [toast, setToast] = useState(null);
 
@@ -325,13 +325,13 @@ function AppInner() {
 
       {/* Header */}
       <header style={S.header}>
-        <div style={S.logo} onClick={() => nav("home")}>
+        <div style={S.logo} onClick={() => nav("landing")}>
           <span style={{ fontSize: 22 }}>🏋️</span>
           <span>MUSCLE<span style={{ color: C.text }}>PREDICT</span></span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <nav style={S.nav}>
-            {[["home", "大会"], ["leaderboard", "ランキング"], ["rules", "ルール"]].map(([pg, label]) => (
+            {[["landing", "TOP"], ["home", "大会"], ["leaderboard", "ランキング"], ["rules", "ルール"]].map(([pg, label]) => (
               <button key={pg} style={S.navBtn(page === pg || (pg === "home" && page === "event"))}
                 onClick={() => nav(pg)}>{label}</button>
             ))}
@@ -357,6 +357,7 @@ function AppInner() {
       </header>
 
       <div style={S.page}>
+        {page === "landing" && <LandingPage nav={nav} />}
         {page === "home" && <HomePage nav={nav} />}
         {page === "event" && <EventPage eventId={pageArg} nav={nav} showToast={showToast} />}
         {page === "leaderboard" && <LeaderboardPage />}
@@ -408,6 +409,126 @@ function NameRegistration() {
         <p style={{ color: C.textMuted, fontSize: 11, marginTop: 16 }}>
           ※ この名前はランキングや予想一覧で公開されます
         </p>
+      </div>
+    </div>
+  );
+}
+
+// ─── Landing Page ───────────────────────────────────────────────
+function LandingPage({ nav }) {
+  const auth = useAuth();
+  const [upcomingEvents, setUpcomingEvents] = useState([]);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase
+        .from("events")
+        .select("*")
+        .in("status", ["open", "closed"])
+        .order("event_date", { ascending: true })
+        .limit(3);
+      setUpcomingEvents(data || []);
+    })();
+  }, []);
+
+  return (
+    <div>
+      {/* Hero */}
+      <div style={{
+        textAlign: "center", padding: "48px 16px 40px",
+        background: `radial-gradient(ellipse at center top, ${C.gold}12 0%, transparent 60%)`,
+        borderRadius: 20, marginBottom: 32,
+      }}>
+        <div style={{ fontSize: 64, marginBottom: 16 }}>🏋️</div>
+        <h1 style={{
+          fontFamily: F.display, fontSize: 36, fontWeight: 900,
+          letterSpacing: "-1px", lineHeight: 1.2, marginBottom: 12,
+        }}>
+          <span style={{ color: C.gold }}>MUSCLE</span>
+          <span style={{ color: C.text }}>PREDICT</span>
+        </h1>
+        <p style={{ color: C.textDim, fontSize: 16, lineHeight: 1.8, maxWidth: 480, margin: "0 auto 24px" }}>
+          パワーリフティング大会の結果を予想して<br />
+          仲間のモチベーションを爆上げしよう！
+        </p>
+        <button style={{ ...S.btn("primary"), padding: "14px 40px", fontSize: 16, borderRadius: 12 }}
+          onClick={() => nav("home")}>
+          大会を見る
+        </button>
+      </div>
+
+      {/* How it works */}
+      <h2 style={{ fontFamily: F.display, fontSize: 20, fontWeight: 800, marginBottom: 16 }}>遊び方</h2>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 32 }}>
+        {[
+          { emoji: "📝", title: "大会を選ぶ", desc: "友達が出場する大会を見つけて参加。合言葉制で身内だけのイベントもOK" },
+          { emoji: "🎯", title: "記録を予想する", desc: "1,000マッスルポイントを使って総重量を予想。ポイントを分割して複数予想もできる" },
+          { emoji: "🔥", title: "選手を応援する", desc: "選手は全予想を超えればポイント獲得！「絶対予想より上を出す」というモチベーションに" },
+          { emoji: "🏆", title: "ランキングで競う", desc: "的中させてポイントを稼ごう。累計ランキングで仲間と腕を競え" },
+        ].map((step, i) => (
+          <div key={i} style={{ ...S.card, cursor: "default", display: "flex", gap: 16, alignItems: "flex-start" }}>
+            <div style={{
+              fontSize: 28, width: 48, height: 48, borderRadius: 12,
+              background: C.gold + "15", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+            }}>{step.emoji}</div>
+            <div>
+              <div style={{ fontFamily: F.display, fontWeight: 800, fontSize: 15, marginBottom: 4 }}>{step.title}</div>
+              <div style={{ color: C.textDim, fontSize: 13, lineHeight: 1.7 }}>{step.desc}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Upcoming events preview */}
+      {upcomingEvents.length > 0 && (
+        <div style={{ marginBottom: 32 }}>
+          <h2 style={{ fontFamily: F.display, fontSize: 20, fontWeight: 800, marginBottom: 16 }}>開催中の大会</h2>
+          {upcomingEvents.map(ev => (
+            <div key={ev.id} style={{ ...S.card, cursor: "pointer" }} onClick={() => nav("event", ev.id)}
+              onMouseEnter={(e) => { e.currentTarget.style.background = C.surfaceHover; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = C.surface; }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                <div style={S.cardTitle}>{ev.name}</div>
+                <StatusBadge status={ev.status} />
+              </div>
+              <div style={{ color: C.textDim, fontSize: 13, display: "flex", gap: 12, marginTop: 4 }}>
+                <span>📅 {ev.event_date}</span>
+                <span style={S.badge(C.gold)}>{SPORT_LABELS[ev.sport_type]}</span>
+              </div>
+            </div>
+          ))}
+          <button style={{
+            ...S.btn("ghost"), width: "100%", marginTop: 8, textAlign: "center",
+          }} onClick={() => nav("home")}>すべての大会を見る →</button>
+        </div>
+      )}
+
+      {/* CTA */}
+      <div style={{
+        ...S.card, cursor: "default", textAlign: "center", padding: 32,
+        background: `linear-gradient(135deg, ${C.surface} 0%, #1a1a2e 100%)`,
+        border: `1px solid ${C.gold}30`,
+      }}>
+        <div style={{ fontSize: 32, marginBottom: 12 }}>💪</div>
+        <h3 style={{ fontFamily: F.display, fontWeight: 800, fontSize: 18, marginBottom: 8 }}>
+          さっそく参加しよう
+        </h3>
+        <p style={{ color: C.textDim, fontSize: 13, marginBottom: 20, lineHeight: 1.8 }}>
+          ゲストは名前入力だけでOK。<br />ログインすれば累計ランキングに反映されます。
+        </p>
+        <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
+          <button style={{ ...S.btn("primary"), padding: "12px 32px" }}
+            onClick={() => nav("home")}>大会を見る</button>
+          {!auth.profile && (
+            <button style={{ ...S.btn("google"), padding: "12px 24px" }}
+              onClick={auth.signInWithGoogle}>Googleでログイン</button>
+          )}
+        </div>
+      </div>
+
+      {/* Disclaimer */}
+      <div style={{ textAlign: "center", padding: "24px 16px 0", color: C.textMuted, fontSize: 11, lineHeight: 1.8 }}>
+        ※「マッスルポイント」は架空のポイントです。実際の金銭とは一切関係ありません。
       </div>
     </div>
   );
