@@ -79,7 +79,7 @@ function AuthProvider({ children }) {
       email: session.user.email,
       display_name: trimmed,
       avatar_url: session.user.user_metadata?.avatar_url || null,
-      role: "athlete",,
+      role: "athlete",
     });
     if (userErr) return { error: "ユーザー登録に失敗しました: " + userErr.message };
     await loadProfile(session.user.id);
@@ -473,6 +473,8 @@ function EventPage({ eventId, nav, showToast }) {
   const [predBench, setPredBench] = useState("");
   const [predDeadlift, setPredDeadlift] = useState("");
   const [predMessage, setPredMessage] = useState("");
+  const [guestName, setGuestName] = useState("");
+  const [guestNameLocked, setGuestNameLocked] = useState(false);
   const [passwordInput, setPasswordInput] = useState("");
   const [accessGranted, setAccessGranted] = useState(false);
 
@@ -536,13 +538,16 @@ function EventPage({ eventId, nav, showToast }) {
   if (loading) return <div style={S.empty}><p>読み込み中...</p></div>;
   if (!event) return <div style={S.empty}>大会が見つかりません</div>;
 
-  const myPreds = predictions.filter(p => p.user_id === auth.profile?.id);
+  const isGuest = !auth.profile;
+  const myPreds = isGuest
+    ? predictions.filter(p => p.guest_name && p.guest_name === guestName && guestNameLocked)
+    : predictions.filter(p => p.user_id === auth.profile?.id);
   const myUsed = myPreds.reduce((s, p) => s + p.amount, 0);
   const remaining = INITIAL_POINTS - myUsed;
   const isBig3 = event.sport_type === "big3";
+  const canPredict = isGuest ? guestNameLocked : true;
 
   const submitPrediction = async () => {
-    if (!auth.profile) { showToast("ログインが必要です", "error"); return; }
     const amount = parseInt(predAmount);
     const total = parseFloat(predTotal);
     if (!amount || amount <= 0 || amount > remaining) { showToast("ポイントが不正です", "error"); return; }
@@ -551,7 +556,8 @@ function EventPage({ eventId, nav, showToast }) {
     const row = {
       event_id: eventId,
       athlete_id: predMode.athleteId,
-      user_id: auth.profile.id,
+      user_id: isGuest ? null : auth.profile.id,
+      guest_name: isGuest ? guestName : null,
       amount,
       predicted_total: total,
       predicted_squat: isBig3 ? parseFloat(predSquat) || null : null,
@@ -612,11 +618,62 @@ function EventPage({ eventId, nav, showToast }) {
         </div>
       )}
 
-      {/* Login prompt */}
-      {event.status === "open" && !auth.profile && (
-        <div style={{ ...S.card, cursor: "default", textAlign: "center", marginBottom: 24 }}>
-          <p style={{ color: C.textDim, marginBottom: 12 }}>予想するにはログインが必要です</p>
-          <button style={S.btn("google")} onClick={auth.signInWithGoogle}>Googleでログイン</button>
+      {/* Guest name entry or login prompt */}
+      {event.status === "open" && !auth.profile && !guestNameLocked && (
+        <div style={{ ...S.card, cursor: "default", marginBottom: 24 }}>
+          <h3 style={{ fontFamily: F.display, fontWeight: 800, fontSize: 15, marginBottom: 12 }}>予想に参加する</h3>
+          <div style={{ marginBottom: 12 }}>
+            <label style={S.label}>名前を入力（ゲスト参加）</label>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input style={{ ...S.input, flex: 1 }} placeholder="あなたの名前" value={guestName} maxLength={20}
+                onChange={(e) => setGuestName(e.target.value)} />
+              <button style={{ ...S.btn("primary"), opacity: guestName.trim() ? 1 : 0.5 }}
+                disabled={!guestName.trim()}
+                onClick={async () => {
+                  const trimmed = guestName.trim();
+                  const { data: existing } = await supabase
+                    .from("reserved_names")
+                    .select("display_name, user_id")
+                    .ilike("display_name", trimmed);
+                  if (existing && existing.length > 0) {
+                    if (existing[0].user_id) {
+                      showToast("この名前はログインユーザーが使用中です", "error");
+                      return;
+                    }
+                  } else {
+                    await supabase.from("reserved_names").insert({ display_name: trimmed, user_id: null });
+                  }
+                  setGuestNameLocked(true);
+                  showToast(`「${trimmed}」で参加します！`);
+                }}>
+                参加する
+              </button>
+            </div>
+          </div>
+          <div style={{ textAlign: "center", color: C.textMuted, fontSize: 12, margin: "12px 0" }}>または</div>
+          <button style={{ ...S.btn("google"), width: "100%", textAlign: "center" }} onClick={auth.signInWithGoogle}>
+            Googleでログイン（ポイント蓄積あり）
+          </button>
+          <p style={{ color: C.textMuted, fontSize: 11, marginTop: 8 }}>
+            ※ ゲスト参加はこの大会限り。ログインすれば累計ランキングに反映されます
+          </p>
+        </div>
+      )}
+
+      {/* Guest name display */}
+      {event.status === "open" && !auth.profile && guestNameLocked && (
+        <div style={{ ...S.card, cursor: "default", marginBottom: 24, background: C.bg, border: `1px solid ${C.gold}30` }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 18 }}>🔥</span>
+              <span style={{ fontWeight: 700, color: C.gold }}>ゲスト: {guestName}</span>
+            </div>
+            <button style={{ background: "none", border: "none", color: C.textMuted, fontSize: 11, cursor: "pointer", fontFamily: F.body }}
+              onClick={() => { setGuestNameLocked(false); setGuestName(""); }}>
+              名前を変更
+            </button>
+          </div>
+          <PointBar used={myUsed} />
         </div>
       )}
 
@@ -678,7 +735,9 @@ function EventPage({ eventId, nav, showToast }) {
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   {athPreds.map((p) => {
-                    const isMine = p.user_id === auth.profile?.id;
+                    const isMine = auth.profile
+                      ? p.user_id === auth.profile.id
+                      : (guestNameLocked && p.guest_name === guestName);
                     const predName = p.users?.display_name || p.guest_name || "ゲスト";
                     const isWinner = settlement?.winners?.some(w => w.id === p.id);
                     const wonPts = settlement?.winners?.find(w => w.id === p.id)?.pointsWon;
@@ -697,7 +756,7 @@ function EventPage({ eventId, nav, showToast }) {
                           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                             <span style={{ fontWeight: 700, fontFamily: F.mono }}>{fmt(p.predicted_total)}</span>
                             {isWinner && <span style={{ ...S.badge(C.green), fontWeight: 800 }}>+{wonPts} MP</span>}
-                            {isMine && event.status === "open" && (
+                            {isMine && !isGuest && event.status === "open" && (
                               <button style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}
                                 onClick={() => deletePrediction(p.id)}>
                                 <Icon name="x" size={14} color={C.accent} />
@@ -745,7 +804,7 @@ function EventPage({ eventId, nav, showToast }) {
             )}
 
             {/* Predict form */}
-            {event.status === "open" && auth.profile && remaining > 0 && (
+            {event.status === "open" && canPredict && remaining > 0 && (
               <div style={{ marginTop: 12 }}>
                 {predMode?.athleteId === ath.id ? (
                   <div style={{ display: "flex", flexDirection: "column", gap: 10, paddingTop: 12 }}>
@@ -921,7 +980,8 @@ function RulesPage() {
         <h3 style={{ fontFamily: F.display, fontWeight: 800, fontSize: 16, marginBottom: 12 }}>選手とサポーター</h3>
         <div style={{ color: C.textDim, fontSize: 14, lineHeight: 2 }}>
           <p>・<strong style={{ color: C.gold }}>選手</strong>: 大会に出場する人。ログイン必須</p>
-          <p>・<strong style={{ color: C.text }}>サポーター</strong>: 予想する人。ログインして予想に参加</p>
+          <p>・<strong style={{ color: C.text }}>サポーター</strong>: 予想する人。名前入力だけでゲスト参加OK</p>
+          <p>・ログインすれば累計ランキングにポイントが蓄積されます</p>
           <p>・全ての予想を選手が上回ると、選手がポイントを獲得できます</p>
           <p>・つまり選手にとっては「予想を超える」ことがモチベーションに！</p>
         </div>
