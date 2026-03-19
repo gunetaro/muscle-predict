@@ -79,7 +79,7 @@ function AuthProvider({ children }) {
       email: session.user.email,
       display_name: trimmed,
       avatar_url: session.user.user_metadata?.avatar_url || null,
-      role: "supporter",
+      role: "athlete",,
     });
     if (userErr) return { error: "ユーザー登録に失敗しました: " + userErr.message };
     await loadProfile(session.user.id);
